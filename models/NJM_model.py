@@ -3,115 +3,44 @@ from PIL import Image
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import ViTFeatureExtractor, ViTModel, PreTrainedModel, PretrainedConfig, PreTrainedTokenizerFast, AutoConfig, AutoModelForCausalLM
+import torchvision.models as models
+import torchvision.transforms as transforms
+from transformers import PreTrainedModel, PretrainedConfig, PreTrainedTokenizerFast, AutoConfig, AutoModelForCausalLM
 
-class SelfAttentionBlock(nn.Module):
-    def __init__(self, hidden_dim, input_length, num_heads = 8):
-        super(SelfAttentionBlock, self).__init__()
-
-        self.hidden_dim = hidden_dim
-        self.input_length = input_length
-
-        self.layer_norm_1 = nn.LayerNorm(hidden_dim)
-        self.self_attention = nn.MultiheadAttention(
-            embed_dim = hidden_dim, 
-            num_heads = num_heads, 
-            batch_first = True
-        )
-
-        self.layer_norm_2 = nn.LayerNorm(hidden_dim)
-        self.fc_1 = nn.Linear(hidden_dim, hidden_dim)
-        self.fc_2 = nn.Linear(hidden_dim, hidden_dim)
-
-        self.attn_mask = torch.triu(torch.ones(self.input_length, self.input_length), diagonal = 1).bool()
-    
-    def forward(self, x):
-        attn_mask = self.attn_mask.to(x.device)
-
-        z = self.layer_norm_1(x)
-        z, attn_output_weights  = self.self_attention(z, z, z, attn_mask = attn_mask)
-        z = x + z
-
-        y = self.layer_norm_2(z)
-        y = nn.LeakyReLU()( self.fc_1(y) )
-        y = self.fc_2(y)
-        y = y + z
-
-        return y, attn_output_weights
-
-class CrossAttentionBlock(nn.Module):
-    def __init__(self, hidden_dim, num_heads = 8):
-        super(CrossAttentionBlock, self).__init__()
-
-        self.hidden_dim = hidden_dim
-
-        self.layer_norm_1 = nn.LayerNorm(hidden_dim)
-        self.cross_attention = nn.MultiheadAttention(
-            embed_dim = hidden_dim,
-            num_heads = num_heads,
-            batch_first = True
-        )
-
-        self.layer_norm_2 = nn.LayerNorm(hidden_dim)
-        self.fc_1 = nn.Linear(hidden_dim, hidden_dim)
-        self.fc_2 = nn.Linear(hidden_dim, hidden_dim)
-        self.activation = nn.LeakyReLU()
-
-    def forward(self, x, y):
-        """
-        x: Decoder側の入力 (batch_size, seq_len, hidden_dim)
-        y: Encoder側の出力 (batch_size, num_patch, hidden_dim)
-        """
-
-        z = self.layer_norm_1(x)
-        z, attn_output_weights = self.cross_attention(
-            query = z,
-            key = y,
-            value = y
-        )
-        z = x + z
-
-        y = self.layer_norm_2(z)
-        y = self.activation(self.fc_1(y))
-        y = self.fc_2(y)
-        y = y + z
-
-        return y, attn_output_weights
-
-class TransformerSentenceGenerator(nn.Module):
-    def __init__(self, num_transformer_layers, num_heads, vocab_size, input_length, hidden_dim, patch_dim, ):
-        super(TransformerSentenceGenerator, self).__init__()
+class LSTMSentenceGenerator(nn.Module):
+    def __init__(self, vocab_size, input_length, hidden_dim, image_feature_dim, ):
+        super(LSTMSentenceGenerator, self).__init__()
 
         self.embedding = nn.Embedding(vocab_size, hidden_dim)
-        self.fc_1 = nn.Linear(patch_dim, hidden_dim)
+        self.fc_1 = nn.Linear(image_feature_dim, hidden_dim)
 
-        self.self_attention_blocks = nn.ModuleList([
-            SelfAttentionBlock(hidden_dim, input_length, num_heads) for _ in range(num_transformer_layers)
-        ])
-        self.cross_attention_blocks = nn.ModuleList([
-            CrossAttentionBlock(hidden_dim) for _ in range(num_transformer_layers)
-        ])
+        self.lstm = nn.LSTM(
+            input_size = hidden_dim,
+            hidden_size = hidden_dim,
+            batch_first = True,
+        )
         
         self.fc_2 = nn.Linear(hidden_dim, vocab_size)
 
     def forward(self, x, y):
         """
             x: 文章(batch_size, seq_len)
-            y: 画像の特徴量(batch_size, num_patch, hidden_dim)
+            y: 画像の特徴量(batch_size, image_feature_dim)
         """
         
         x = self.embedding(x)
         y = self.fc_1(y)
 
-        for SA, CA in zip(self.self_attention_blocks, self.cross_attention_blocks):
-            x, _ = SA(x)
-            x, _ = CA(x, y)
+        h_0 = y.unsqueeze(0)  # (1, batch_size, hidden_dim)
+        c_0 = torch.zeros_like(h_0)  # (1, batch_size, hidden_dim)
+        x, _ = self.lstm(x, (h_0, c_0))
+
 
         x = self.fc_2(x)
 
         return x
 
-def GUMI_T_generate_ohgiri(vit, image_preprocesser, generator, image_paths, tokenizer, sentence_length, argmax = False, k = 5, temp = 1.0):
+def NJM_generate_ohgiri(resnet152, image_preprocesser, generator, image_paths, tokenizer, sentence_length, argmax = False, k = 5, temp = 1.0):
     """
         image_paths: 画像のパスのリスト
     """
@@ -119,10 +48,10 @@ def GUMI_T_generate_ohgiri(vit, image_preprocesser, generator, image_paths, toke
     device = next(generator.parameters()).device
 
     images = [Image.open(path).convert("RGB") for path in image_paths]
-    tmp_images = image_preprocesser(images, return_tensors = "pt").to(device)
+    preprocessed_images = torch.stack([image_preprocesser(I) for I in images]).to(device)
+    
     with torch.no_grad():
-        outputs = vit(**tmp_images)
-    image_features = outputs.last_hidden_state[:, 1:, :]
+        image_features = resnet152(preprocessed_images)
 
     gen_texts = torch.ones(size = (len(image_paths), 1)).to(torch.int32).to(device)
 
@@ -131,7 +60,6 @@ def GUMI_T_generate_ohgiri(vit, image_preprocesser, generator, image_paths, toke
         outputs = generator(tmp_texts, image_features)
 
         logits = outputs[:, i, :]
-
         if argmax:
             gathered_indices = torch.argmax(logits, dim = -1, keepdim = True)
         else:  
@@ -164,47 +92,47 @@ def GUMI_T_generate_ohgiri(vit, image_preprocesser, generator, image_paths, toke
     for i, GT in enumerate(tmp_gen_texts):
         print(f"{i}: {GT}")
 
-### HuggingFace用の設定
-
-class GUMI_T_Config(PretrainedConfig):
-    model_type = "gumi_t"
-
+class NJM_Config(PretrainedConfig):
+    model_type = "NJM"
     def __init__(self, 
-            num_transformer_layers = 1, 
-            num_heads = 8, 
-            vocab_size = 17363, 
-            input_length = 32, 
-            hidden_dim = 1024, 
-            patch_dim = 768, **kwargs):
+                 vocab_size = 17363, 
+                 input_length = 32,
+                 hidden_dim = 1024,
+                 image_feature_dim = 2048,
+                 **kwargs):
         super().__init__(**kwargs)
-
-        self.num_transformer_layers = num_transformer_layers
-        self.num_heads = num_heads
         self.vocab_size = vocab_size
         self.input_length = input_length
         self.hidden_dim = hidden_dim
-        self.patch_dim = patch_dim
+        self.image_feature_dim = image_feature_dim
 
-class GUMI_T(PreTrainedModel):
-    config_class = GUMI_T_Config
-    
+class NJM(PreTrainedModel):
+    config_class = NJM_Config
+
     def __init__(self, config):
-        super(GUMI_T, self).__init__(config)
+        super().__init__(config)
 
         self.input_length = config.input_length
 
-        self.vit = ViTModel.from_pretrained("google/vit-base-patch16-224-in21k")
-        self.image_preprocesser = ViTFeatureExtractor.from_pretrained("google/vit-base-patch16-224-in21k")
+        self.image_preprocesser = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(  # ImageNetの平均と標準偏差で正規化
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]
+            )
+        ])
+        resnet152 = models.resnet152(pretrained=True)
+        self.resnet152 = torch.nn.Sequential(*list(resnet152.children())[:-1], nn.Flatten(start_dim = 1))
 
-        self.generator = TransformerSentenceGenerator(
-            num_transformer_layers = config.num_transformer_layers,
-            num_heads = config.num_heads,
+        self.generator = LSTMSentenceGenerator(
             vocab_size = config.vocab_size, 
             input_length = config.input_length, 
             hidden_dim = config.hidden_dim, 
-            patch_dim = config.patch_dim
+            image_feature_dim = config.image_feature_dim
         )
-    
+
     def load_weights(self, weight_path):
         self.generator.load_state_dict(torch.load(weight_path))
 
@@ -213,26 +141,25 @@ class GUMI_T(PreTrainedModel):
 
         torch.save(self.state_dict(), os.path.join(save_directory, "pytorch_model.bin"))
         self.config.save_pretrained(save_directory)
-
+    
     def forward(self, input_ids, image_features):
         """
             input_ids: 単語のIDのリスト(batch_size, input_length)
-            image_features: 画像の特徴量のリスト(batch_size, 196, 768)
+            image_features: 画像の特徴量のリスト(batch_size, 2048)
         """
         
         outputs = self.generator(input_ids, image_features, )
         
         return outputs # [batch_size, input_length, vocab_size]
-
+    
     def generate(self, inputs, argmax = False, k = 5, temp = 1.0):
         device = next(self.generator.parameters()).device
 
         pil_images = inputs["pixel_values"]
 
-        tmp_images = self.image_preprocesser(pil_images, return_tensors = "pt").to(device)
+        preprocessed_images = torch.stack([self.image_preprocesser(I) for I in pil_images]).to(device)
         with torch.no_grad():
-            outputs = self.vit(**tmp_images)
-        image_features = outputs.last_hidden_state[:, 1:, :]
+            image_features = self.resnet152(preprocessed_images)
 
         gen_texts = torch.ones(size = (len(pil_images), 1)).to(torch.int32).to(device)
 
