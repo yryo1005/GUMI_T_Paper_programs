@@ -1,3 +1,5 @@
+import matplotlib.pyplot as plt
+from PIL import Image
 import torch.nn as nn
 from transformers import ViTFeatureExtractor, ViTModel, PreTrainedModel, PretrainedConfig, PreTrainedTokenizerFast, AutoConfig, AutoModelForCausalLM
 
@@ -166,11 +168,11 @@ class GUMI_T_Config(PretrainedConfig):
     model_type = "gumi_t"
 
     def __init__(self, 
-            num_transformer_layers = NUM_TRANSFORMER_LAYERS, 
-            num_heads = NUM_HEADS, 
-            vocab_size = VOCAB_SIZE, 
-            input_length = MAX_SENTENCE_LENGTH + 1, 
-            hidden_dim = HIDDEN_DIM, 
+            num_transformer_layers = 1, 
+            num_heads = 8, 
+            vocab_size = 17363, 
+            input_length = 32, 
+            hidden_dim = 1024, 
             patch_dim = 768, **kwargs):
         super().__init__(**kwargs)
 
