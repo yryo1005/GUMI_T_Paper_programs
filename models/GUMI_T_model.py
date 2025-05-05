@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from transformers import ViTFeatureExtractor, ViTModel, PreTrainedModel, PretrainedConfig, PreTrainedTokenizerFast, AutoConfig, AutoModelForCausalLM
 
 class SelfAttentionBlock(nn.Module):
