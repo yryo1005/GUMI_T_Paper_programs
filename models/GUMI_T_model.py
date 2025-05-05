@@ -111,7 +111,7 @@ class TransformerSentenceGenerator(nn.Module):
 
         return x
 
-def generate_ohgiri(vit, image_feature_extractor, generator, image_paths, tokenizer, argmax = False):
+def GUMI_T_generate_ohgiri(vit, image_feature_extractor, generator, image_paths, tokenizer, sentence_length, argmax = False, k = 5, temp = 1.0):
     """
         image_paths: 画像のパスのリスト
     """
@@ -126,8 +126,8 @@ def generate_ohgiri(vit, image_feature_extractor, generator, image_paths, tokeni
 
     gen_texts = torch.ones(size = (len(image_paths), 1)).to(torch.int32).to(device)
 
-    for i in range(0, MAX_SENTENCE_LENGTH):
-        tmp_texts = F.pad(gen_texts, (0, MAX_SENTENCE_LENGTH - i), value = 0).to(torch.int32).to(device)
+    for i in range(0, sentence_length):
+        tmp_texts = F.pad(gen_texts, (0, sentence_length - i), value = 0).to(torch.int32).to(device)
         outputs = generator(tmp_texts, image_features)
 
         logits = outputs[:, i, :]
@@ -135,8 +135,8 @@ def generate_ohgiri(vit, image_feature_extractor, generator, image_paths, tokeni
         if argmax:
             gathered_indices = torch.argmax(logits, dim = -1, keepdim = True)
         else:  
-            probs = F.softmax(logits, dim = -1)
-            top_k_probs, top_k_indices = torch.topk(probs, k = 5, dim = -1)
+            probs = F.softmax(logits / temp, dim = -1)
+            top_k_probs, top_k_indices = torch.topk(probs, k = k, dim = -1)
             top_k_probs = top_k_probs / top_k_probs.sum(dim = -1, keepdim = True) 
             chosen_indices = torch.multinomial(top_k_probs, 1).squeeze(-1)
             gathered_indices = top_k_indices.gather(-1, chosen_indices.unsqueeze(-1))
@@ -225,17 +225,19 @@ class GUMI_T(PreTrainedModel):
         return outputs # [batch_size, input_length, vocab_size]
 
     def generate(self, inputs, argmax = False, k = 5, temp = 1.0):
+        device = next(self.generator.parameters()).device
+
         pil_images = inputs["pixel_values"]
 
-        tmp_images = self.image_feature_extractor(pil_images, return_tensors = "pt")
+        tmp_images = self.image_feature_extractor(pil_images, return_tensors = "pt").to(device)
         with torch.no_grad():
             outputs = self.vit(**tmp_images)
         image_features = outputs.last_hidden_state[:, 1:, :]
 
-        gen_texts = torch.ones(size = (len(pil_images), 1)).to(torch.int32)
+        gen_texts = torch.ones(size = (len(pil_images), 1)).to(torch.int32).to(device)
 
         for i in range(0, self.input_length - 1):
-            tmp_texts = F.pad(gen_texts, (0, self.input_length - 1 - i), value = 0).to(torch.int32)
+            tmp_texts = F.pad(gen_texts, (0, self.input_length - 1 - i), value = 0).to(torch.int32).to(device)
             outputs = self.generator(tmp_texts, image_features)
 
             logits = outputs[:, i, :]
