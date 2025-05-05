@@ -226,7 +226,7 @@ class GUMI_T(PreTrainedModel):
     def generate(self, inputs, argmax = False):
         pil_images = inputs["pixel_values"]
 
-        tmp_images = image_feature_extractor(pil_images, return_tensors = "pt")
+        tmp_images = self.image_feature_extractor(pil_images, return_tensors = "pt")
         with torch.no_grad():
             outputs = self.vit(**tmp_images)
         image_features = outputs.last_hidden_state[:, 1:, :]
