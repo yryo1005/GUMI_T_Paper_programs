@@ -194,7 +194,7 @@ class GUMI_T(PreTrainedModel):
         self.vit = ViTModel.from_pretrained("google/vit-base-patch16-224-in21k")
         self.image_feature_extractor = ViTFeatureExtractor.from_pretrained("google/vit-base-patch16-224-in21k")
 
-        self.generator = SentenceGenerator(
+        self.generator = TransformerSentenceGenerator(
             num_transformer_layers = config.num_transformer_layers,
             num_heads = config.num_heads,
             vocab_size = config.vocab_size, 
