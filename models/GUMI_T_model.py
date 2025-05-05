@@ -224,7 +224,7 @@ class GUMI_T(PreTrainedModel):
         
         return outputs # [batch_size, input_length, vocab_size]
 
-    def generate(self, inputs, argmax = False):
+    def generate(self, inputs, argmax = False, k = 5, temp = 1.0):
         pil_images = inputs["pixel_values"]
 
         tmp_images = self.image_feature_extractor(pil_images, return_tensors = "pt")
@@ -243,8 +243,8 @@ class GUMI_T(PreTrainedModel):
             if argmax:
                 gathered_indices = torch.argmax(logits, dim = -1, keepdim = True)
             else:  
-                probs = F.softmax(logits, dim = -1)
-                top_k_probs, top_k_indices = torch.topk(probs, k = 5, dim = -1)
+                probs = F.softmax(logits / temp, dim = -1)
+                top_k_probs, top_k_indices = torch.topk(probs, k = k, dim = -1)
                 top_k_probs = top_k_probs / top_k_probs.sum(dim = -1, keepdim = True) 
                 chosen_indices = torch.multinomial(top_k_probs, 1).squeeze(-1)
                 gathered_indices = top_k_indices.gather(-1, chosen_indices.unsqueeze(-1))
