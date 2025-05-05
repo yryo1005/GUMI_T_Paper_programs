@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 from PIL import Image
+import torch
 import torch.nn as nn
 from transformers import ViTFeatureExtractor, ViTModel, PreTrainedModel, PretrainedConfig, PreTrainedTokenizerFast, AutoConfig, AutoModelForCausalLM
 
