@@ -167,3 +167,102 @@ def GUMI_T_ViTFC_generate_ohgiri(image_preprocesser, generator, image_paths, tok
     for i, GT in enumerate(tmp_gen_texts):
         print(f"{i}: {GT}")
 
+class GUMI_T_ViTFC_Config(PretrainedConfig):
+    model_type = "gumi_t_vitfc"
+
+    def __init__(self, 
+            num_transformer_layers = 1, 
+            num_heads = 8, 
+            vocab_size = 17363, 
+            input_length = 32, 
+            hidden_dim = 1024, 
+            patch_dim = 768, **kwargs):
+        super().__init__(**kwargs)
+
+        self.num_transformer_layers = num_transformer_layers
+        self.num_heads = num_heads
+        self.vocab_size = vocab_size
+        self.input_length = input_length
+        self.hidden_dim = hidden_dim
+        self.patch_dim = patch_dim
+
+class GUMI_T_ViTFC(PreTrainedModel):
+    config_class = GUMI_T_ViTFC_Config
+    
+    def __init__(self, config):
+        super(GUMI_T_ViTFC, self).__init__(config)
+
+        self.input_length = config.input_length
+
+        self.image_preprocesser = ViTFeatureExtractor.from_pretrained("google/vit-base-patch16-224-in21k")
+
+        self.generator = TransformerSentenceGeneratorViTFC(
+            num_transformer_layers = config.num_transformer_layers,
+            num_heads = config.num_heads,
+            vocab_size = config.vocab_size, 
+            input_length = config.input_length, 
+            hidden_dim = config.hidden_dim, 
+            patch_dim = config.patch_dim
+        )
+    
+    def load_weights(self, weight_path):
+        self.generator.load_state_dict(torch.load(weight_path))
+
+    def save_pretrained(self, save_directory):
+        os.makedirs(save_directory, exist_ok = True)
+
+        torch.save(self.state_dict(), os.path.join(save_directory, "pytorch_model.bin"))
+        self.config.save_pretrained(save_directory)
+
+    def forward(self, input_ids, images):
+        """
+            input_ids: 単語のIDのリスト(batch_size, input_length)
+            images: 画像["pixel_values"](batch_size, num_patch, hidden_dim)
+        """
+        
+        outputs = self.generator(input_ids, images, )
+        
+        return outputs # [batch_size, input_length, vocab_size]
+
+    def generate(self, inputs, argmax = False, k = 5, temp = 1.0):
+        device = next(self.generator.parameters()).device
+
+        pil_images = inputs["pixel_values"]
+
+        preprocessed_images = self.image_preprocesser(pil_images, return_tensors = "pt").to(device)
+
+        gen_texts = torch.ones(size = (len(pil_images), 1)).to(torch.int32).to(device)
+
+        for i in range(0, self.input_length - 1):
+            tmp_texts = F.pad(gen_texts, (0, self.input_length - 1 - i), value = 0).to(torch.int32).to(device)
+            outputs = self.generator(tmp_texts, preprocessed_images)
+
+            logits = outputs[:, i, :]
+
+            if argmax:
+                gathered_indices = torch.argmax(logits, dim = -1, keepdim = True)
+            else:  
+                probs = F.softmax(logits / temp, dim = -1)
+                top_k_probs, top_k_indices = torch.topk(probs, k = k, dim = -1)
+                top_k_probs = top_k_probs / top_k_probs.sum(dim = -1, keepdim = True) 
+                chosen_indices = torch.multinomial(top_k_probs, 1).squeeze(-1)
+                gathered_indices = top_k_indices.gather(-1, chosen_indices.unsqueeze(-1))
+
+            gen_texts = torch.cat([gen_texts, gathered_indices], dim = 1)
+        
+        return gen_texts
+    
+    def decode(self, gen_texts, tokenizer):
+        """
+            gen_texts: 生成された文章のIDのリスト(batch_size, input_length)
+        """
+        tmp_gen_texts = list()
+        for G in gen_texts:
+            tmp_gen_text = list()
+            for I in G[1:]:
+                if int(I) in [0, 1, 2]:
+                    break
+                tmp_gen_text.append( tokenizer.decode([int(I)]) )
+            tmp_gen_texts.append("".join(tmp_gen_text))
+        
+        return tmp_gen_texts
