@@ -87,6 +87,8 @@ class TransformerSentenceGeneratorViTFC(nn.Module):
         self.vit = ViTModel.from_pretrained("google/vit-base-patch16-224-in21k")
 
         self.embedding = nn.Embedding(vocab_size, hidden_dim)
+        self.position_encoding = nn.Parameter(torch.randn(1, input_length, hidden_dim))  # 学習可能な位置エンコーディング
+
         self.fc_1 = nn.Linear(patch_dim, hidden_dim)
 
         self.self_attention_blocks = nn.ModuleList([
@@ -105,6 +107,7 @@ class TransformerSentenceGeneratorViTFC(nn.Module):
         """
         
         x = self.embedding(x)
+        x = x + self.position_encoding
 
         y = self.vit(**y)
         y = y.last_hidden_state[:, 1:, :] # CLSトークンを除外

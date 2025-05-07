@@ -84,6 +84,9 @@ class TransformerSentenceGenerator(nn.Module):
         super(TransformerSentenceGenerator, self).__init__()
 
         self.embedding = nn.Embedding(vocab_size, hidden_dim)
+        self.position_encoding = nn.Parameter(torch.randn(1, input_length, hidden_dim))  # 学習可能な位置エンコーディング
+
+
         self.fc_1 = nn.Linear(patch_dim, hidden_dim)
 
         self.self_attention_blocks = nn.ModuleList([
@@ -102,6 +105,8 @@ class TransformerSentenceGenerator(nn.Module):
         """
         
         x = self.embedding(x)
+        x = x + self.position_encoding
+        
         y = self.fc_1(y)
 
         for SA, CA in zip(self.self_attention_blocks, self.cross_attention_blocks):
