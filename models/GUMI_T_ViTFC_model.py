@@ -120,6 +120,28 @@ class TransformerSentenceGeneratorViTFC(nn.Module):
         x = self.fc_2(x)
 
         return x
+    
+    def get_cross_attention_weights(self, x, y):
+        """
+            各CrossAttentionBlockのAttentionWeightを取得する
+            x: 文章(batch_size, seq_len)
+            y: 画像の特徴量(batch_size, num_patch, hidden_dim)
+        """
+        attention_weights = list()
+
+        x = self.embedding(x)
+        x = x + self.position_encoding
+        
+        y = self.vit(**y)
+        y = y.last_hidden_state[:, 1:, :] # CLSトークンを除外
+        y = self.fc_1(y)
+
+        for SA, CA in zip(self.self_attention_blocks, self.cross_attention_blocks):
+            x, _ = SA(x)
+            x, attn_output_weights = CA(x, y)
+            attention_weights.append(attn_output_weights)
+
+        return attention_weights
 
 def GUMI_T_ViTFC_generate_ohgiri(image_preprocesser, generator, image_paths, tokenizer, sentence_length, argmax = False, k = 5, temp = 1.0):
     """
@@ -270,3 +292,19 @@ class GUMI_T_ViTFC(PreTrainedModel):
             tmp_gen_texts.append("".join(tmp_gen_text))
         
         return tmp_gen_texts
+    
+    def get_cross_attention_weights(self, input_ids, inputs):
+        """
+            input_ids: 単語のIDのリスト(batch_size, input_length)
+            inputs: 画像["pixel_values"](batch_size, num_patch, hidden_dim)
+        """
+        
+        device = next(self.generator.parameters()).device
+
+        pil_images = inputs["pixel_values"]
+        preprocessed_images = self.image_preprocesser(pil_images, return_tensors = "pt").to(device)
+        
+        attention_weights = self.generator.get_cross_attention_weights(input_ids, preprocessed_images)
+        attention_weights = torch.stack(attention_weights, dim = 0) # [num_layers, batch_size, num_heads, input_length, num_patch]
+
+        return attention_weights

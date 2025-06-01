@@ -116,6 +116,26 @@ class TransformerSentenceGenerator(nn.Module):
         x = self.fc_2(x)
 
         return x
+    
+    def get_cross_attention_weights(self, x, y):
+        """
+            各CrossAttentionBlockのAttentionWeightを取得する
+            x: 文章(batch_size, seq_len)
+            y: 画像の特徴量(batch_size, num_patch, hidden_dim)
+        """
+        attention_weights = list()
+
+        x = self.embedding(x)
+        x = x + self.position_encoding
+        
+        y = self.fc_1(y)
+
+        for SA, CA in zip(self.self_attention_blocks, self.cross_attention_blocks):
+            x, _ = SA(x)
+            x, attn_output_weights = CA(x, y)
+            attention_weights.append(attn_output_weights)
+
+        return attention_weights
 
 def GUMI_T_generate_ohgiri(vit, image_preprocesser, generator, image_paths, tokenizer, sentence_length, argmax = False, k = 5, temp = 1.0):
     """
