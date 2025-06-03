@@ -30,8 +30,13 @@ import requests
 from PIL import Image
 
 app = Flask(__name__)
-configuration = Configuration(access_token = 'GSRKbLH7evIuhdoUwX+zvpar8/aWzCzfvdivP9Pi2Hg0m+Ivn0P0wadcyzhRcANCQPEbitC7Ncke1DyiMuWRcT3rwZ3UH4stm/q0NZ+sjnrM+b0mKWKDL/lP6Gpygmf45qILvmYgYUL6u6Rik0GBgAdB04t89/1O/w1cDnyilFU=')
-handler = WebhookHandler('e485d86db895039e826724b9e0eeb8d4')
+# V2
+# configuration = Configuration(access_token = 'GSRKbLH7evIuhdoUwX+zvpar8/aWzCzfvdivP9Pi2Hg0m+Ivn0P0wadcyzhRcANCQPEbitC7Ncke1DyiMuWRcT3rwZ3UH4stm/q0NZ+sjnrM+b0mKWKDL/lP6Gpygmf45qILvmYgYUL6u6Rik0GBgAdB04t89/1O/w1cDnyilFU=')
+# handler = WebhookHandler('e485d86db895039e826724b9e0eeb8d4')
+
+# V3
+configuration = Configuration(access_token = 'YNbN/yBpYf32HIwGPEml9opwW2uLpyYhSP4psKzXdvltubXdiVZ5XHeTF1HB0/nrzpEQYE3SydWJJ0ewsC23SGaKh0qyDVksxZNjkrRVT6p0NDlAjoUqTLEhZlJfesw41k9z9I7n5JK1RZev62rQ7gdB04t89/1O/w1cDnyilFU=')
+handler = WebhookHandler('93ead61523bb5b6325a919ef6e6fbcfa')
 
 # 大喜利を読み込み
 with open("/home/user/workspace/GUMI_T_Paper/GUMI_T_Paper_programs/Generated_Bokes/all_bokes.json", "r") as f:
@@ -248,7 +253,7 @@ def handle_follow(event):
 ☆☆☆☆☆☆☆☆☆☆☆☆☆
 
 ボケて（bokete），株式会社オモロキとは一切関わりのないものが運営しています．
-連絡先 : 23T2003@sit.shonan-it.ac.jp
+連絡先 : 25T2501@sit.shonan-it.ac.jp
 """
 
     line_bot_api.reply_message(ReplyMessageRequest(
@@ -436,7 +441,7 @@ if __name__ == "__main__":
     wsl -d Ubuntu2204_Colab20250113 -u user
     cd /home/user/workspace/GUMI_T_Paper/GUMI_T_Paper_programs
     source /home/user/Colab_20250113/bin/activate
-    flask run --reload --port 8080
+    flask run --reload --port 8080 --without-threads
 2つ目のコマンドプロンプトで
     wsl -d Ubuntu2204_Colab20250113 -u user
     ngrok http 8080
